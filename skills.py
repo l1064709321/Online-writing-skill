@@ -4317,7 +4317,7 @@ class NovelAuditor:
             {"id": 6,  "cat": "角色一致性", "name": "外貌描写一致性", "check": self._check_appearance_consistency},
             {"id": 7,  "cat": "角色一致性", "name": "角色时间线", "check": self._check_character_timeline},
             # 二、物资与战力 (8-13)
-            # {"id": 8,  "cat": "物资与战力", "name": "法宝/技能遗忘", "check": self._check_forgotten_items},  # 已移除：网文中物品提到后立刻使用是正常模式，大量误报
+            {"id": 8,  "cat": "物资与战力", "name": "法宝/技能遗忘", "check": self._check_forgotten_items},
             {"id": 9,  "cat": "物资与战力", "name": "战力体系崩坏", "check": self._check_power_system},
             {"id": 10, "cat": "物资与战力", "name": "物资数量矛盾", "check": self._check_resource_consistency},
             {"id": 11, "cat": "物资与战力", "name": "资源使用合理", "check": self._check_resource_usage},
@@ -4496,18 +4496,27 @@ class NovelAuditor:
         """检查法宝/技能是否被遗忘。"""
         import re
         # 提取提到的法宝/物品
-        items = re.findall(r"(?:得到|获得|取出|掏出|手中)(.{2,6}(?:剑|刀|枪|符|丹|珠|印|镜|塔|鼎))", text)
-        if items:
-            # 检查后面是否还在使用
-            unique_items = list(set(items))
-            forgotten = []
-            for item in unique_items:
-                last_use = text.rfind(item)
-                first_mention = text.find(item)
-                if last_use - first_mention < 100 and text.count(item) == 1:
-                    forgotten.append(item)
-            if forgotten:
-                return {"level": "warning", "message": f"以下物品提到后可能被遗忘: {', '.join(forgotten[:3])}", "suggestion": "要么后续使用，要么删除不必要的物品提及"}
+        items = re.findall(r"(?:得到|获得|取出|掏出|手中|携带)(.{2,6}(?:剑|刀|枪|符|丹|珠|印|镜|塔|鼎))", text)
+        if not items:
+            return None
+        unique_items = list(set(items))
+        forgotten = []
+        # 使用动词：提到物品后立刻使用不算遗忘
+        use_verbs = r"(?:拍|贴|用|扔|祭出|催动|激活|点燃|念|挥|斩|杀|刺|挡|握|举|拔|收|放|吞|吃|喝|化作|瞬间|顿时|随即)"
+        for item in unique_items:
+            first = text.find(item)
+            if first < 0:
+                continue
+            # 检查物品提到后200字内是否有使用动作
+            after_text = text[first:first+300]
+            if re.search(use_verbs, after_text):
+                continue  # 有使用动作，不算遗忘
+            # 检查物品是否只出现1次且全文较长（说明后面再也没提过）
+            count = text.count(item)
+            if count == 1 and len(text) > 5000:
+                forgotten.append(item)
+        if forgotten:
+            return {"level": "info", "message": f"以下物品只出现1次且未见使用: {', '.join(forgotten[:3])}", "suggestion": "确认后续是否有回收，若无则考虑删除"}
         return None
 
     def _check_power_system(self, text, outline):
