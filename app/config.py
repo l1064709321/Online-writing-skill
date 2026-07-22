@@ -450,7 +450,11 @@ def update_model_config(model: str, *, api_key: str | None = None, api_base: str
 
 def remove_model_config(model: str) -> None:
     s = get_settings()
+    # 防止误删: 不允许删除当前 default (会让 default 指向已删模型,前后端状态错乱)
+    if s.default_model.model == model and len(s.models) <= 1:
+        raise ValueError("至少保留一个模型;不能删除当前默认且唯一的模型")
     s.models = [m for m in s.models if m.model != model]
+    # 删的是 default 时,自动切到列表第一个
     if s.default_model.model == model and s.models:
         s.default_model = s.models[0]
     save_settings()

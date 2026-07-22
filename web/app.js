@@ -1562,12 +1562,16 @@ function bindSettings() {
     b.onclick = async () => {
       const model = b.dataset.addmodel;
       const defBase = b.dataset.base || "";
-      await api("/api/settings/model", {
-        method: "PUT",
-        body: JSON.stringify({ model, api_key: "", api_base: defBase, temperature: 0.8, max_tokens: 4096 }),
-      });
-      toast(`已添加 ${model}`, "ok");
-      await loadSettings();
+      try {
+        await api("/api/settings/model", {
+          method: "PUT",
+          body: JSON.stringify({ model, api_key: "", api_base: defBase, temperature: 0.8, max_tokens: 4096 }),
+        });
+        toast(`已添加 ${model}`, "ok");
+        await loadSettings();
+      } catch (e) {
+        // api() 已 toast 错误,这里只兜底防止 await 链中断导致按钮看似"卡死"
+      }
     };
   });
   // 添加自定义模型 (模型名 + 自定义地址 + 密钥)
@@ -1585,22 +1589,26 @@ function bindSettings() {
       // 用户填了自定义 base 就用,否则用厂商默认
       const defBase = defaultBaseFor(model);
       const api_base = customBase || defBase || "";
-      await api("/api/settings/model", {
-        method: "PUT",
-        body: JSON.stringify({
-          model,
-          api_key: customKey,
-          api_base,
-          temperature: 0.8,
-          max_tokens: 4096,
-        }),
-      });
-      toast(`已添加自定义模型 ${model}`, "ok");
-      // 清空输入
-      if (modelEl) modelEl.value = "";
-      if (baseEl) baseEl.value = "";
-      if (keyEl) keyEl.value = "";
-      await loadSettings();
+      try {
+        await api("/api/settings/model", {
+          method: "PUT",
+          body: JSON.stringify({
+            model,
+            api_key: customKey,
+            api_base,
+            temperature: 0.8,
+            max_tokens: 4096,
+          }),
+        });
+        toast(`已添加自定义模型 ${model}`, "ok");
+        // 清空输入
+        if (modelEl) modelEl.value = "";
+        if (baseEl) baseEl.value = "";
+        if (keyEl) keyEl.value = "";
+        await loadSettings();
+      } catch (e) {
+        // api() 已 toast,兜底防止按钮卡死
+      }
     };
   }
   // 保存单个模型配置
@@ -1622,29 +1630,62 @@ function bindSettings() {
         temperature: tempEl ? parseFloat(tempEl.value) : null,
         max_tokens: tokEl ? parseInt(tokEl.value) : null,
       };
-      await api("/api/settings/model", { method: "PUT", body: JSON.stringify(body) });
-      toast(`${m} 配置已保存`, "ok");
-      await loadSettings();
-      await loadConfig();
+      try {
+        await api("/api/settings/model", { method: "PUT", body: JSON.stringify(body) });
+        toast(`${m} 配置已保存`, "ok");
+        await loadSettings();
+        await loadConfig();
+      } catch (e) {
+        // api() 已 toast,兜底
+      }
     };
   });
   // 设为默认
   $$("#sp-body .mc-setdef").forEach((b) => {
     b.onclick = async () => {
-      await api("/api/config/model", { method: "PUT", body: JSON.stringify({ model: b.dataset.model }) });
-      toast(`已设为默认: ${b.dataset.model}`, "ok");
-      await loadSettings();
-      await loadConfig();
+      try {
+        await api("/api/config/model", { method: "PUT", body: JSON.stringify({ model: b.dataset.model }) });
+        toast(`已设为默认: ${b.dataset.model}`, "ok");
+        await loadSettings();
+        await loadConfig();
+      } catch (e) {
+        // 兜底
+      }
     };
   });
   // 删除模型
   $$("#sp-body .mc-del").forEach((b) => {
     b.onclick = async () => {
-      if (!confirm(`删除模型 ${b.dataset.model}?`)) return;
-      await api("/api/settings/model", { method: "DELETE", body: JSON.stringify({ model: b.dataset.model }) });
-      toast("已删除", "ok");
-      await loadSettings();
-      await loadConfig();
+      const model = b.dataset.model;
+      // 二次确认: 用 toast 替代 confirm(),避免在某些浏览器环境 (无头/受限) 不弹窗导致按钮看似卡死
+      if (b.dataset.confirming === "1") {
+        // 第二次点击: 真正删除
+        b.dataset.confirming = "0";
+        b.textContent = "✕";
+        b.classList.remove("warn");
+        try {
+          await api("/api/settings/model", { method: "DELETE", body: JSON.stringify({ model }) });
+          toast(`已删除 ${model}`, "ok");
+          await loadSettings();
+          await loadConfig();
+        } catch (e) {
+          // api() 已 toast (如"至少保留一个模型"),兜底
+        }
+      } else {
+        // 第一次点击: 标红 + 提示再点一次确认
+        b.dataset.confirming = "1";
+        b.textContent = "再点删除";
+        b.classList.add("warn");
+        toast(`再点一次确认删除 ${model}`, "warn", 3000);
+        // 3 秒后自动取消确认状态
+        setTimeout(() => {
+          if (b.dataset.confirming === "1") {
+            b.dataset.confirming = "0";
+            b.textContent = "✕";
+            b.classList.remove("warn");
+          }
+        }, 3000);
+      }
     };
   });
   // 保存 Agent 参数
